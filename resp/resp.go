@@ -24,15 +24,23 @@ type Value struct {
 	Null  bool
 }
 
-type Resp struct {
+type Reader struct {
 	reader *bufio.Reader
 }
 
-func NewResp(rd *bufio.Reader) *Resp {
-	return &Resp{reader: rd}
+func NewReader(rd *bufio.Reader) *Reader {
+	return &Reader{reader: rd}
 }
 
-func (r *Resp) Read() (Value, error) {
+type Writer struct {
+	writer *bufio.Writer
+}
+
+func NewWriter(writer *bufio.Writer) *Writer {
+	return &Writer{writer: writer}
+}
+
+func (r *Reader) Read() (Value, error) {
 	t, err := r.reader.ReadByte()
 	if err != nil {
 		return Value{}, err
@@ -54,7 +62,7 @@ func (r *Resp) Read() (Value, error) {
 	}
 }
 
-func (r *Resp) readLine() (string, error) {
+func (r *Reader) readLine() (string, error) {
 	line, err := r.reader.ReadString('\n')
 	if err != nil {
 		return "", err
@@ -65,7 +73,7 @@ func (r *Resp) readLine() (string, error) {
 	return line[:len(line)-2], nil
 }
 
-func (r *Resp) readString() (Value, error) {
+func (r *Reader) readString() (Value, error) {
 	line, err := r.readLine()
 	if err != nil {
 		return Value{}, err
@@ -73,7 +81,7 @@ func (r *Resp) readString() (Value, error) {
 	return Value{Type: "string", Str: line}, nil
 }
 
-func (r *Resp) readError() (Value, error) {
+func (r *Reader) readError() (Value, error) {
 	line, err := r.readLine()
 	if err != nil {
 		return Value{}, err
@@ -81,7 +89,7 @@ func (r *Resp) readError() (Value, error) {
 	return Value{Type: "error", Str: line}, nil
 }
 
-func (r *Resp) readInteger() (Value, error) {
+func (r *Reader) readInteger() (Value, error) {
 	line, err := r.readLine()
 	if err != nil {
 		return Value{}, err
@@ -95,7 +103,7 @@ func (r *Resp) readInteger() (Value, error) {
 	return Value{Type: "integer", Num: num}, nil
 }
 
-func (r *Resp) readBulk() (Value, error) {
+func (r *Reader) readBulk() (Value, error) {
 	line, err := r.readLine()
 	if err != nil {
 		return Value{}, err
@@ -124,7 +132,7 @@ func (r *Resp) readBulk() (Value, error) {
 	return Value{Type: "bulk", Bulk: data}, nil
 }
 
-func (r *Resp) readArray() (Value, error) {
+func (r *Reader) readArray() (Value, error) {
 	line, err := r.readLine()
 	if err != nil {
 		return Value{}, err
@@ -154,7 +162,7 @@ func (r *Resp) readArray() (Value, error) {
 }
 
 // CRLF is the carriage return line feed sequence of \r\n
-func (r *Resp) expectCRLF() error {
+func (r *Reader) expectCRLF() error {
 	b1, err := r.reader.ReadByte()
 	if err != nil {
 		return err
@@ -167,4 +175,74 @@ func (r *Resp) expectCRLF() error {
 		return fmt.Errorf("expected CRLF")
 	}
 	return nil
+}
+
+func (w *Writer) Write(v Value) error {
+	bytes := v.Marshal()
+	_, err := w.writer.Write(bytes)
+	return err
+}
+
+func (v Value) Marshal() []byte {
+	switch v.Type {
+	case "array":
+		return v.marshalArray()
+	case "bulk":
+		return v.marshalBulk()
+	case "string":
+		return v.marshalString()
+	case "null":
+		return v.marshallNull()
+	case "error":
+		return v.marshallError()
+	default:
+		return []byte{}
+	}
+}
+
+func (v Value) marshalString() []byte {
+	var bytes []byte
+	bytes = append(bytes, STRING)
+	bytes = append(bytes, v.Str...)
+	bytes = append(bytes, '\r', '\n')
+
+	return bytes
+}
+
+func (v Value) marshalBulk() []byte {
+	var bytes []byte
+	bytes = append(bytes, BULK)
+	bytes = append(bytes, strconv.Itoa(len(v.Bulk))...)
+	bytes = append(bytes, '\r', '\n')
+	bytes = append(bytes, v.Bulk...)
+	bytes = append(bytes, '\r', '\n')
+
+	return bytes
+}
+
+func (v Value) marshalArray() []byte {
+	len := len(v.Array)
+	var bytes []byte
+	bytes = append(bytes, ARRAY)
+	bytes = append(bytes, strconv.Itoa(len)...)
+	bytes = append(bytes, '\r', '\n')
+
+	for i := 0; i < len; i++ {
+		bytes = append(bytes, v.Array[i].Marshal()...)
+	}
+
+	return bytes
+}
+
+func (v Value) marshallError() []byte {
+	var bytes []byte
+	bytes = append(bytes, ERROR)
+	bytes = append(bytes, []byte(v.Str)...)
+	bytes = append(bytes, '\r', '\n')
+
+	return bytes
+}
+
+func (v Value) marshallNull() []byte {
+	return []byte("$-1\r\n")
 }

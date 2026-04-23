@@ -28,8 +28,21 @@ func main() {
 
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
-	// Handle client connection
-	resp := resp.NewResp(bufio.NewReader(conn))
-	fmt.Println(resp.Read())
-	conn.Write([]byte("+OK\r\n"))
+
+	reader := resp.NewReader(bufio.NewReader(conn))
+	bufWriter := bufio.NewWriter(conn)
+	writer := resp.NewWriter(bufWriter)
+
+	for {
+		val, err := reader.Read()
+		if err != nil {
+			fmt.Println("Error reading from client:", err)
+			return
+		}
+
+		fmt.Printf("received: %+v\n", val)
+
+		writer.Write(resp.Value{Type: "string", Str: "OK"})
+		bufWriter.Flush()
+	}
 }
