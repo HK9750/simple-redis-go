@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"redis/aof"
 	"redis/handler"
 	"redis/resp"
 	"strings"
@@ -34,6 +35,12 @@ func handleConnection(conn net.Conn) {
 	reader := resp.NewReader(bufio.NewReader(conn))
 	bufWriter := bufio.NewWriter(conn)
 	writer := resp.NewWriter(bufWriter)
+	aof, err := aof.NewAOF("db.aof")
+	if err != nil {
+		fmt.Println("Error creating AOF:", err)
+		return
+	}
+	defer aof.Close()
 
 	for {
 		val, err := reader.Read()
@@ -45,6 +52,12 @@ func handleConnection(conn net.Conn) {
 		args := val.Array[1:]
 
 		handler := handler.Handlers[command]
+		if command == "SET" || command == "HSET" {
+			err := aof.Write(val)
+			if err != nil {
+				fmt.Println("Error writing to AOF:", err)
+			}
+		}
 		if handler != nil {
 			result := handler(args)
 			writer.Write(result)
