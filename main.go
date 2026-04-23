@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"redis/handler"
 	"redis/resp"
+	"strings"
 )
 
 func main() {
@@ -39,10 +41,16 @@ func handleConnection(conn net.Conn) {
 			fmt.Println("Error reading from client:", err)
 			return
 		}
+		command := strings.ToUpper(string(val.Array[0].Bulk))
+		args := val.Array[1:]
 
-		fmt.Printf("received: %+v\n", val)
-
-		writer.Write(resp.Value{Type: "string", Str: "OK"})
+		handler := handler.Handlers[command]
+		if handler != nil {
+			result := handler(args)
+			writer.Write(result)
+		} else {
+			writer.Write(resp.Value{Type: "error", Str: "ERR unknown command '" + command + "'"})
+		}
 		bufWriter.Flush()
 	}
 }
